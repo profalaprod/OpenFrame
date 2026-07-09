@@ -86,6 +86,7 @@ export function VideoDragDropUploader({
   );
 
   const activeTusUploadRef = useRef<ActiveTusUpload | null>(null);
+  const activeXhrUploadRef = useRef<XMLHttpRequest | null>(null);
   const pendingUploadRef = useRef<{
     projectId: string;
     videoId: string;
@@ -193,6 +194,11 @@ export function VideoDragDropUploader({
     cancelRequestedRef.current = true;
     const pending = pendingUploadRef.current;
 
+    if (activeXhrUploadRef.current) {
+      activeXhrUploadRef.current.abort();
+      activeXhrUploadRef.current = null;
+    }
+
     if (activeTusUploadRef.current) {
       try {
         await Promise.resolve(activeTusUploadRef.current.abort(false));
@@ -232,25 +238,24 @@ export function VideoDragDropUploader({
       setSelectedProjectId(projectId);
       setSelectedProjectName(projectName ?? projectsById.get(projectId) ?? null);
 
-      let createdVideoId: string | null = null;
-      let uploadToken: string | null = null;
-
       try {
         const title = getDefaultTitleFromFile(file);
 
-        const initResponse = await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
+        const initResponse = await fetch(`/api/projects/${projectId}/videos/s3-init`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title }),
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type || 'video/mp4',
+            size: file.size,
+          }),
         });
 
         const initPayload = (await initResponse.json().catch(() => null)) as {
           data?: {
+            uploadUrl: string;
+            videoUrl: string;
             videoId: string;
-            libraryId: string;
-            signature: string;
-            expirationTime: number;
-            uploadToken: string;
           };
           error?: string;
         } | null;
@@ -259,47 +264,47 @@ export function VideoDragDropUploader({
           throw new Error(initPayload?.error || 'Failed to initialize upload');
         }
 
-        createdVideoId = initPayload.data.videoId;
-        uploadToken = initPayload.data.uploadToken;
-        pendingUploadRef.current = {
-          projectId,
-          videoId: createdVideoId,
-          uploadToken,
-        };
+        setUploadStatus('Uploading... 0%');
 
-        const { Upload } = await import('tus-js-client');
         await new Promise<void>((resolve, reject) => {
-          const upload = new Upload(file, {
-            endpoint: 'https://video.bunnycdn.com/tusupload',
-            retryDelays: [0, 3000, 5000, 10000, 20000],
-            headers: {
-              AuthorizationSignature: initPayload.data!.signature,
-              AuthorizationExpire: initPayload.data!.expirationTime.toString(),
-              VideoId: initPayload.data!.videoId,
-              LibraryId: initPayload.data!.libraryId,
-            },
-            metadata: {
-              filetype: file.type,
-              title,
-            },
-            onError: (error) => {
-              activeTusUploadRef.current = null;
-              reject(new Error(error.message));
-            },
-            onProgress: (bytesUploaded, bytesTotal) => {
-              const percentage = Number(((bytesUploaded / bytesTotal) * 100).toFixed(1));
-              setUploadProgress(percentage);
-              setUploadStatus(`Uploading... ${percentage}%`);
-            },
-            onSuccess: () => {
-              activeTusUploadRef.current = null;
-              resolve();
-            },
-          });
+          const xhr = new XMLHttpRequest();
+          activeXhrUploadRef.current = xhr;
 
-          activeTusUploadRef.current = upload;
-          upload.start();
+          xhr.open('PUT', initPayload.data!.uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+
+          xhr.upload.onprogress = (event) => {
+            if (!event.lengthComputable) return;
+
+            const percentage = Number(((event.loaded / event.total) * 100).toFixed(1));
+            setUploadProgress(percentage);
+            setUploadStatus(`Uploading... ${percentage}%`);
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              activeXhrUploadRef.current = null;
+              resolve();
+              return;
+            }
+
+            reject(new Error(`Storage upload failed (${xhr.status})`));
+          };
+
+          xhr.onerror = () => {
+            activeXhrUploadRef.current = null;
+            reject(new Error('Could not reach video storage'));
+          };
+
+          xhr.onabort = () => {
+            activeXhrUploadRef.current = null;
+            reject(new Error('Upload cancelled'));
+          };
+
+          xhr.send(file);
         });
+
+        if (cancelRequestedRef.current) return;
 
         setUploadStatus('Saving video...');
 
@@ -309,14 +314,11 @@ export function VideoDragDropUploader({
           body: JSON.stringify({
             title,
             description: null,
-            videoUrl: `https://iframe.mediadelivery.net/embed/${initPayload.data.libraryId}/${initPayload.data.videoId}`,
-            providerId: 'bunny',
-            videoId: initPayload.data.videoId,
-            thumbnailUrl: bunnyCdnHostname
-              ? `https://${bunnyCdnHostname}/${initPayload.data.videoId}/thumbnail.jpg`
-              : null,
+            videoUrl: initPayload.data.videoUrl,
+            providerId: 'direct',
+            videoId: initPayload.data.videoUrl,
+            thumbnailUrl: null,
             duration: null,
-            uploadToken,
           }),
         });
 
@@ -340,22 +342,8 @@ export function VideoDragDropUploader({
         console.error('Drag-drop upload failed:', error);
 
         if (cancelRequestedRef.current) {
-          setUploadStatus('');
-          setUploadProgress(0);
-          setIsUploading(false);
+          cleanupUploadState();
           return;
-        }
-
-        if (createdVideoId && uploadToken) {
-          try {
-            await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ videoId: createdVideoId, uploadToken }),
-            });
-          } catch (cleanupError) {
-            console.error('Failed to cleanup pending upload:', cleanupError);
-          }
         }
 
         setUploadStatus('');
@@ -364,7 +352,7 @@ export function VideoDragDropUploader({
         toast.error(error instanceof Error ? error.message : 'Failed to upload video');
       }
     },
-    [bunnyCdnHostname, cleanupUploadState, projectsById, router]
+    [cleanupUploadState, projectsById, router]
   );
 
   const handleDropFile = useCallback(

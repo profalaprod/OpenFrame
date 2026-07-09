@@ -128,3 +128,21 @@ export async function uploadAudio(
 }
 
 export { R2_BUCKET_NAME };
+
+export function createPublicR2Client(): S3Client {
+  const publicEndpoint = process.env.R2_PRESIGN_ENDPOINT || R2_ENDPOINT;
+
+  if (!publicEndpoint) {
+    throw new Error('Missing R2_PRESIGN_ENDPOINT or R2_ENDPOINT');
+  }
+
+  return new S3Client({
+    region: 'auto',
+    endpoint: trimTrailingSlashes(publicEndpoint),
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: requireStorageValue('R2_ACCESS_KEY_ID', R2_ACCESS_KEY_ID),
+      secretAccessKey: requireStorageValue('R2_SECRET_ACCESS_KEY', R2_SECRET_ACCESS_KEY),
+    },
+  });
+}
