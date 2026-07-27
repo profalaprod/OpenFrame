@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { uploadVideoMultipart } from '@/lib/uploads/multipart-video-upload';
 
 type ProjectOption = {
   id: string;
@@ -242,67 +243,18 @@ export function VideoDragDropUploader({
       try {
         const title = getDefaultTitleFromFile(file);
 
-        const initResponse = await fetch(`/api/projects/${projectId}/videos/s3-init`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: file.name,
-            contentType: file.type || 'video/mp4',
-            size: file.size,
-          }),
-        });
+        const uploadResult = await uploadVideoMultipart({
+          projectId,
+          file,
 
-        const initPayload = (await initResponse.json().catch(() => null)) as {
-          data?: {
-            uploadUrl: string;
-            videoUrl: string;
-            videoId: string;
-          };
-          error?: string;
-        } | null;
-
-        if (!initResponse.ok || !initPayload?.data) {
-          throw new Error(initPayload?.error || 'Failed to initialize upload');
-        }
-
-        setUploadStatus('Uploading... 0%');
-
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          activeXhrUploadRef.current = xhr;
-
-          xhr.open('PUT', initPayload.data!.uploadUrl);
-          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-
-          xhr.upload.onprogress = (event) => {
-            if (!event.lengthComputable) return;
-
-            const percentage = Number(((event.loaded / event.total) * 100).toFixed(1));
+          onProgress: ({ percentage }) => {
             setUploadProgress(percentage);
             setUploadStatus(`Uploading... ${percentage}%`);
-          };
+          },
 
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              activeXhrUploadRef.current = null;
-              resolve();
-              return;
-            }
-
-            reject(new Error(`Storage upload failed (${xhr.status})`));
-          };
-
-          xhr.onerror = () => {
-            activeXhrUploadRef.current = null;
-            reject(new Error('Could not reach video storage'));
-          };
-
-          xhr.onabort = () => {
-            activeXhrUploadRef.current = null;
-            reject(new Error('Upload cancelled'));
-          };
-
-          xhr.send(file);
+          onStatus: (status) => {
+            setUploadStatus(status);
+          },
         });
 
         if (cancelRequestedRef.current) return;
@@ -315,9 +267,9 @@ export function VideoDragDropUploader({
           body: JSON.stringify({
             title,
             description: null,
-            videoUrl: initPayload.data.videoUrl,
-            providerId: 'direct',
-            videoId: initPayload.data.videoUrl,
+            videoUrl: uploadResult.url,
+            providerId: uploadResult.providerId,
+            videoId: uploadResult.videoId,
             thumbnailUrl: null,
             duration: null,
           }),

@@ -26,6 +26,8 @@ import {
   type VideoSource,
 } from '@/lib/video-providers';
 
+import { uploadVideoMultipart } from '@/lib/uploads/multipart-video-upload';
+
 const VIDEO_FILE_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv'];
 
 function isVideoFile(file: File): boolean {
@@ -243,99 +245,19 @@ export default function NewVideoPageClient({
     providerId: string;
     url: string;
   }> => {
-    setUploadStatus('Initializing upload...');
+    return uploadVideoMultipart({
+      projectId,
+      file,
 
-    const initRes = await fetch(
-      `/api/projects/${projectId}/videos/s3-init`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type || 'video/mp4',
-          size: file.size,
-        }),
-      }
-    );
-
-    const initPayload = (await initRes.json().catch(() => null)) as {
-      data?: {
-        uploadUrl: string;
-        videoUrl: string;
-        videoId: string;
-      };
-      error?: string;
-    } | null;
-
-    if (!initRes.ok || !initPayload?.data) {
-      throw new Error(
-        initPayload?.error || 'Failed to initialize upload'
-      );
-    }
-
-    setUploadStatus('Uploading... 0%');
-
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      activeXhrUploadRef.current = xhr;
-
-      xhr.open('PUT', initPayload.data!.uploadUrl);
-
-      xhr.setRequestHeader(
-        'Content-Type',
-        file.type || 'video/mp4'
-      );
-
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return;
-
-        const percentage = Number(
-          ((event.loaded / event.total) * 100).toFixed(1)
-        );
-
+      onProgress: ({ percentage }) => {
         setUploadProgress(percentage);
         setUploadStatus(`Uploading... ${percentage}%`);
-      };
+      },
 
-      xhr.onload = () => {
-        activeXhrUploadRef.current = null;
-
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-          return;
-        }
-
-        reject(
-          new Error(`Storage upload failed (${xhr.status})`)
-        );
-      };
-
-      xhr.onerror = () => {
-        activeXhrUploadRef.current = null;
-
-        reject(
-          new Error('Could not reach video storage')
-        );
-      };
-
-      xhr.onabort = () => {
-        activeXhrUploadRef.current = null;
-
-        reject(
-          new Error('Upload cancelled')
-        );
-      };
-
-      xhr.send(file);
+      onStatus: (status) => {
+        setUploadStatus(status);
+      },
     });
-
-    setUploadStatus('Saving video...');
-
-    return {
-      videoId: initPayload.data.videoId,
-      providerId: 'direct',
-      url: initPayload.data.videoUrl,
-    };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
