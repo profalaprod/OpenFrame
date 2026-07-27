@@ -21,7 +21,6 @@ function sanitizeDownloadFileName(value: string): string {
 function getAllowedHosts() {
   const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
   return [
-    'storage.ndongala.tech',
     ...(bunnyCdnHostname ? [bunnyCdnHostname] : []),
     ...(process.env.NEXT_PUBLIC_DIRECT_DOWNLOAD_ALLOWED_HOSTS ?? '').split(','),
   ]

@@ -132,7 +132,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       id: video.id,
       title: video.title,
       thumbnailUrl:
-        activeVersion?.thumbnailUrl || 'https://via.placeholder.com/320x180?text=No+Thumbnail',
+        activeVersion?.thumbnailUrl || '',
       currentVersion: video._count.versions,
       commentCount: activeVersion?._count.comments || 0,
       duration: formatDuration(activeVersion?.duration),

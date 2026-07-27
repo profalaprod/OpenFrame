@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useState } from 'react';
+import { memo } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -66,21 +66,6 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
   versionsCount,
   onCreateVersion,
 }: VersionActionsDialogProps) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!newVersionFile) {
-      setThumbnailUrl(null);
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(newVersionFile);
-    setThumbnailUrl(objectUrl);
-
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [newVersionFile]);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -102,9 +87,11 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
             onValueChange={(v) => onNewVersionModeChange(v as 'url' | 'file')}
             className="mb-2"
           >
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList
+              className={`grid w-full ${bunnyUploadsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}
+            >
               <TabsTrigger value="url">Link URL</TabsTrigger>
-              <TabsTrigger value="file">Direct Upload</TabsTrigger>
+              {bunnyUploadsEnabled ? <TabsTrigger value="file">Upload File</TabsTrigger> : null}
             </TabsList>
           </Tabs>
 
@@ -142,81 +129,17 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
               <div className="flex items-center justify-center w-full">
                 <label
                   htmlFor="versionFile"
-                  onDragEnter={(event) => {
-                    event.preventDefault();
-                    if (!isCreatingVersion) setIsDragging(true);
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'copy';
-                    if (!isCreatingVersion) setIsDragging(true);
-                  }}
-                  onDragLeave={(event) => {
-                    event.preventDefault();
-
-                    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-                      setIsDragging(false);
-                    }
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setIsDragging(false);
-
-                    if (isCreatingVersion) return;
-
-                    const file = event.dataTransfer.files?.[0];
-
-                    if (file && file.type.startsWith('video/')) {
-                      onNewVersionFileChange(file);
-                    } else {
-                      toast.error('Please drop a valid video file');
-                    }
-                  }}
-                  className={`relative flex flex-col items-center justify-center w-full h-44 overflow-hidden border-2 border-dashed rounded-lg cursor-pointer transition-all ${
-                    isDragging
-                      ? 'border-primary bg-primary/15 ring-2 ring-primary/30 scale-[1.01]'
-                      : newVersionFile
-                        ? 'border-primary bg-muted/30'
-                        : 'border-border bg-muted/30 hover:bg-muted/50'
-                  }`}
+                  className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors ${newVersionFile ? 'border-primary' : 'border-border'}`}
                 >
-                  {thumbnailUrl && (
-                    <>
-                      <video
-                        src={thumbnailUrl}
-                        muted
-                        preload="metadata"
-                        className="absolute inset-0 h-full w-full object-cover"
-                        onLoadedMetadata={(event) => {
-                          event.currentTarget.currentTime = Math.min(
-                            1,
-                            event.currentTarget.duration || 0,
-                          );
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-background/65 backdrop-blur-[1px]" />
-                    </>
-                  )}
-
-                  {isDragging && (
-                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-primary/20 backdrop-blur-[2px]">
-                      <UploadCloud className="mb-2 h-10 w-10 text-primary animate-bounce" />
-                      <p className="font-semibold text-primary">Drop video here</p>
-                    </div>
-                  )}
-
-                  <div className="relative z-10 flex flex-col items-center justify-center px-4 text-center">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
                     {newVersionFile ? (
                       <>
                         <FileVideo className="w-8 h-8 mb-2 text-primary" />
-                        <p className="mb-1 text-sm text-foreground font-medium truncate max-w-[260px]">
+                        <p className="mb-1 text-sm text-foreground font-medium truncate max-w-[200px]">
                           {newVersionFile.name}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {(newVersionFile.size / (1024 * 1024)).toFixed(2)} MB
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Click or drop another video to replace
                         </p>
                       </>
                     ) : (
@@ -229,18 +152,16 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
                       </>
                     )}
                   </div>
-
                   <input
                     id="versionFile"
                     type="file"
                     accept="video/*"
                     className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
                       if (file && file.type.startsWith('video/')) {
                         onNewVersionFileChange(file);
-                      } else if (file) {
+                      } else {
                         toast.error('Please select a valid video file');
                       }
                     }}

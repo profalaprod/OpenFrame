@@ -1,5 +1,6 @@
 'use client';
 
+import { createAndUploadVideoThumbnail } from '@/lib/video-thumbnail-upload';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -338,29 +339,26 @@ export function VideoDragDropUploader({
 
         setUploadStatus('Creating thumbnail...');
 
-        try {
+        const thumbnailUrl =
+          await createAndUploadVideoThumbnail(file, createdVideoId);
+
+        if (thumbnailUrl) {
+          setUploadStatus('Saving thumbnail...');
+
           const thumbnailResponse = await fetch(
-            `/api/projects/${projectId}/videos/${createdVideoId}/thumbnail`,
+            `/api/projects/${projectId}/videos/${createdVideoId}`,
             {
-              method: 'POST',
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ thumbnailUrl }),
             }
           );
 
           if (!thumbnailResponse.ok) {
-            const thumbnailPayload = await thumbnailResponse
-              .json()
-              .catch(() => null);
-
             console.error(
-              'Video uploaded, but server thumbnail generation failed:',
-              thumbnailPayload?.error || thumbnailResponse.status
+              'Video uploaded, but thumbnail URL could not be saved'
             );
           }
-        } catch (thumbnailError) {
-          console.error(
-            'Video uploaded, but server thumbnail generation failed:',
-            thumbnailError
-          );
         }
 
         toast.success(

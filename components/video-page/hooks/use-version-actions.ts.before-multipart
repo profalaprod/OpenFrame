@@ -9,7 +9,6 @@ import {
   type VideoSource,
 } from '@/lib/video-providers';
 import type { VersionActionsConfig, VideoData } from '@/components/video-page/types';
-import { uploadVideoMultipart } from '@/lib/uploads/multipart-video-upload';
 
 interface UseVersionActionsParams extends VersionActionsConfig {
   setVideo: Dispatch<SetStateAction<VideoData | null>>;
@@ -80,22 +79,88 @@ export function useVersionActions({
       } else {
         if (!newVersionFile) throw new Error('No file selected');
 
-        const uploadResult = await uploadVideoMultipart({
-          projectId,
-          file: newVersionFile,
+        setNewVersionUploadStatus('Initializing upload...');
 
-          onProgress: ({ percentage }) => {
+        const initRes = await fetch(
+          `/api/projects/${projectId}/videos/s3-init`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: newVersionFile.name,
+              contentType: newVersionFile.type || 'video/mp4',
+              size: newVersionFile.size,
+            }),
+          }
+        );
+
+        const initPayload = (await initRes.json().catch(() => null)) as {
+          data?: {
+            uploadUrl: string;
+            videoUrl: string;
+            videoId: string;
+          };
+          error?: string;
+        } | null;
+
+        if (!initRes.ok || !initPayload?.data) {
+          throw new Error(
+            initPayload?.error || 'Failed to initialize upload'
+          );
+        }
+
+        setNewVersionUploadStatus('Uploading... 0%');
+
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+
+          xhr.open('PUT', initPayload.data!.uploadUrl);
+
+          xhr.setRequestHeader(
+            'Content-Type',
+            newVersionFile.type || 'video/mp4'
+          );
+
+          xhr.upload.onprogress = (event) => {
+            if (!event.lengthComputable) return;
+
+            const percentage = Number(
+              ((event.loaded / event.total) * 100).toFixed(1)
+            );
+
             setNewVersionUploadProgress(percentage);
-          },
+            setNewVersionUploadStatus(
+              `Uploading... ${percentage}%`
+            );
+          };
 
-          onStatus: (status) => {
-            setNewVersionUploadStatus(status);
-          },
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+              return;
+            }
+
+            reject(
+              new Error(
+                `Storage upload failed (${xhr.status})`
+              )
+            );
+          };
+
+          xhr.onerror = () => {
+            reject(
+              new Error('Could not reach video storage')
+            );
+          };
+
+          xhr.send(newVersionFile);
         });
 
-        finalVideoUrl = uploadResult.url;
-        finalProviderId = uploadResult.providerId;
-        finalProviderVideoId = uploadResult.videoId;
+        setNewVersionUploadStatus('Saving version...');
+
+        finalVideoUrl = initPayload.data.videoUrl;
+        finalProviderId = 'direct';
+        finalProviderVideoId = initPayload.data.videoId;
         finalThumbnailUrl = null;
       }
 

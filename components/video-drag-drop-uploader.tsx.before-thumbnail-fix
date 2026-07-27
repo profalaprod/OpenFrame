@@ -1,5 +1,6 @@
 'use client';
 
+import { createAndUploadVideoThumbnail } from '@/lib/video-thumbnail-upload';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -307,6 +308,11 @@ export function VideoDragDropUploader({
 
         if (cancelRequestedRef.current) return;
 
+        setUploadStatus('Creating thumbnail...');
+
+        const thumbnailUrl =
+          await createAndUploadVideoThumbnail(file);
+
         setUploadStatus('Saving video...');
 
         const createResponse = await fetch(`/api/projects/${projectId}/videos`, {
@@ -318,49 +324,17 @@ export function VideoDragDropUploader({
             videoUrl: initPayload.data.videoUrl,
             providerId: 'direct',
             videoId: initPayload.data.videoUrl,
-            thumbnailUrl: null,
+            thumbnailUrl,
             duration: null,
           }),
         });
 
         const createPayload = (await createResponse.json().catch(() => null)) as {
-          data?: {
-            id?: string;
-          };
           error?: string;
         } | null;
 
-        if (!createResponse.ok || !createPayload?.data?.id) {
+        if (!createResponse.ok) {
           throw new Error(createPayload?.error || 'Failed to create video');
-        }
-
-        const createdVideoId = createPayload.data.id;
-
-        setUploadStatus('Creating thumbnail...');
-
-        try {
-          const thumbnailResponse = await fetch(
-            `/api/projects/${projectId}/videos/${createdVideoId}/thumbnail`,
-            {
-              method: 'POST',
-            }
-          );
-
-          if (!thumbnailResponse.ok) {
-            const thumbnailPayload = await thumbnailResponse
-              .json()
-              .catch(() => null);
-
-            console.error(
-              'Video uploaded, but server thumbnail generation failed:',
-              thumbnailPayload?.error || thumbnailResponse.status
-            );
-          }
-        } catch (thumbnailError) {
-          console.error(
-            'Video uploaded, but server thumbnail generation failed:',
-            thumbnailError
-          );
         }
 
         toast.success(

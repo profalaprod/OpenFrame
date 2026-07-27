@@ -174,7 +174,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { title, description, position, thumbnailUrl } = body;
+    const { title, description, position } = body;
 
     // Validate types before using string methods to prevent type confusion attacks
     if (
@@ -188,29 +188,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (typeof title === 'string') updateData.title = title.trim();
     if (typeof description === 'string') updateData.description = description.trim() || null;
     if (position !== undefined) updateData.position = position;
-
-    if (
-      thumbnailUrl !== undefined &&
-      thumbnailUrl !== null &&
-      typeof thumbnailUrl !== 'string'
-    ) {
-      return apiErrors.badRequest('thumbnailUrl must be a string or null');
-    }
-
-    if (thumbnailUrl !== undefined) {
-      await db.videoVersion.updateMany({
-        where: {
-          videoParentId: videoId,
-          isActive: true,
-        },
-        data: {
-          thumbnailUrl:
-            typeof thumbnailUrl === 'string' && thumbnailUrl.trim()
-              ? thumbnailUrl.trim()
-              : null,
-        },
-      });
-    }
 
     const updatedVideo = await db.video.update({
       where: { id: videoId },

@@ -38,7 +38,7 @@ const imgSrcParts = [
   cdnOrigin,
 ].filter(Boolean);
 
-const mediaSrcParts = ["'self'", 'blob:', 'https://storage.ndongala.tech', cdnOrigin].filter(Boolean);
+const mediaSrcParts = ["'self'", 'blob:', cdnOrigin].filter(Boolean);
 
 const contentSecurityPolicy = [
   "default-src 'self'",

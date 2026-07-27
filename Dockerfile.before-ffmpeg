@@ -30,7 +30,7 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl netcat-openbsd ffmpeg \
+  && apt-get install -y --no-install-recommends curl netcat-openbsd \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/package.json ./package.json

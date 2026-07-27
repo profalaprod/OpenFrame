@@ -143,10 +143,9 @@ export function useVideoPlayer({
     if (!activeProviderId) return;
     const isYoutube = activeProviderId === 'youtube';
     const isBunny = activeProviderId === 'bunny';
-    const isDirect = activeProviderId === 'direct';
 
     if (isYoutube && !isApiLoaded) return;
-    if (!isYoutube && !isBunny && !isDirect) return;
+    if (!isYoutube && !isBunny) return;
 
     const currentVersionKey = `${activeProviderId ?? 'none'}:${activeVersionId ?? 'none'}`;
     const versionChanged = previousVersionKeyRef.current !== currentVersionKey;
@@ -215,60 +214,6 @@ export function useVideoPlayer({
             },
           },
         });
-      } else if (isDirect) {
-        const videoEl = videoRef.current;
-        if (!videoEl) return;
-
-        const onLoadedMetadata = () => {
-          setIsReady(true);
-          if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) {
-            setVideoDuration(videoEl.duration);
-          }
-        };
-
-        const onDurationChange = () => {
-          if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) {
-            setVideoDuration(videoEl.duration);
-          }
-        };
-
-        const onPlay = () => setIsPlaying(true);
-
-        const onPause = () => {
-          setIsPlaying(false);
-          scheduleWatchProgressSaveRef.current({
-            progress: videoEl.currentTime || 0,
-            duration: videoEl.duration || 0,
-            immediate: true,
-            force: true,
-          });
-        };
-
-        const onEnded = () => setIsPlaying(false);
-
-        const onTimeUpdate = () => {
-          if (!isDraggingRef.current) {
-            setCurrentTime(videoEl.currentTime || 0);
-          }
-        };
-
-        videoEl.addEventListener('loadedmetadata', onLoadedMetadata);
-        videoEl.addEventListener('durationchange', onDurationChange);
-        videoEl.addEventListener('play', onPlay);
-        videoEl.addEventListener('pause', onPause);
-        videoEl.addEventListener('ended', onEnded);
-        videoEl.addEventListener('timeupdate', onTimeUpdate);
-
-        videoEl.load();
-
-        return () => {
-          videoEl.removeEventListener('loadedmetadata', onLoadedMetadata);
-          videoEl.removeEventListener('durationchange', onDurationChange);
-          videoEl.removeEventListener('play', onPlay);
-          videoEl.removeEventListener('pause', onPause);
-          videoEl.removeEventListener('ended', onEnded);
-          videoEl.removeEventListener('timeupdate', onTimeUpdate);
-        };
       } else if (isBunny) {
         const videoEl = videoRef.current;
         if (!videoEl) return;
@@ -618,7 +563,7 @@ export function useVideoPlayer({
         } else {
           window.onYouTubeIframeAPIReady = initPlayer;
         }
-      } else if (isBunny || isDirect) {
+      } else if (isBunny) {
         initPlayer();
       }
     }, 100);
@@ -857,42 +802,18 @@ export function useVideoPlayer({
   ]);
 
   const handlePlayPause = useCallback(() => {
-    if (activeProviderId === 'bunny' || activeProviderId === 'direct') {
-      const videoEl = videoRef.current;
-      if (!videoEl) return;
-
-      if (videoEl.paused) {
-        void videoEl.play().catch((error) => {
-          console.error('Failed to play video:', error);
-        });
-      } else {
-        videoEl.pause();
-      }
-      return;
-    }
-
     if (!playerRef.current) return;
     if (isPlaying) {
       playerRef.current.pauseVideo();
     } else {
       playerRef.current.playVideo();
     }
-  }, [activeProviderId, isPlaying, playerRef, videoRef]);
+  }, [isPlaying, playerRef]);
 
   const handleSeekToTimestamp = useCallback(
     (timestamp: number, annotation?: string | null, options?: { pauseAfterSeek?: boolean }) => {
       setCurrentTime(timestamp);
-
-      if (
-        (activeProviderId === 'bunny' || activeProviderId === 'direct') &&
-        videoRef.current
-      ) {
-        videoRef.current.currentTime = timestamp;
-
-        if (options?.pauseAfterSeek) {
-          videoRef.current.pause();
-        }
-      } else if (playerRef.current?.seekTo) {
+      if (playerRef.current?.seekTo) {
         const playerState = playerRef.current.getPlayerState?.();
         const ytPlayingState = window.YT?.PlayerState?.PLAYING ?? 1;
         const ytBufferingState = window.YT?.PlayerState?.BUFFERING ?? 3;
@@ -922,19 +843,10 @@ export function useVideoPlayer({
         setViewingAnnotation(null);
       }
     },
-    [activeProviderId, isPlaying, playerRef, setViewingAnnotation, videoRef]
+    [isPlaying, playerRef, setViewingAnnotation]
   );
 
   const handleMuteToggle = useCallback(() => {
-    if (activeProviderId === 'bunny' || activeProviderId === 'direct') {
-      const videoEl = videoRef.current;
-      if (!videoEl) return;
-
-      videoEl.muted = !videoEl.muted;
-      setIsMuted(videoEl.muted);
-      return;
-    }
-
     if (!playerRef.current) return;
     if (isMuted) {
       playerRef.current.unMute();
@@ -942,7 +854,7 @@ export function useVideoPlayer({
       playerRef.current.mute();
     }
     setIsMuted(!isMuted);
-  }, [activeProviderId, isMuted, playerRef, videoRef]);
+  }, [isMuted, playerRef]);
 
   const handleSkip = useCallback(
     (seconds: number) => {
@@ -955,17 +867,9 @@ export function useVideoPlayer({
   const handleSpeedChange = useCallback(
     (speed: number) => {
       setPlaybackSpeed(speed);
-
-      if (activeProviderId === 'bunny' || activeProviderId === 'direct') {
-        if (videoRef.current) {
-          videoRef.current.playbackRate = speed;
-        }
-        return;
-      }
-
       playerRef.current?.setPlaybackRate(speed);
     },
-    [activeProviderId, playerRef, videoRef]
+    [playerRef]
   );
 
   const handleQualityChange = useCallback(

@@ -2,6 +2,7 @@
 
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
+import * as tus from 'tus-js-client';
 import {
   parseVideoUrl,
   getThumbnailUrl,
@@ -9,7 +10,7 @@ import {
   type VideoSource,
 } from '@/lib/video-providers';
 import type { VersionActionsConfig, VideoData } from '@/components/video-page/types';
-import { uploadVideoMultipart } from '@/lib/uploads/multipart-video-upload';
+import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
 
 interface UseVersionActionsParams extends VersionActionsConfig {
   setVideo: Dispatch<SetStateAction<VideoData | null>>;
@@ -39,6 +40,7 @@ export function useVersionActions({
   const [showDeleteVersionDialog, setShowDeleteVersionDialog] = useState(false);
   const [versionToDelete, setVersionToDelete] = useState<string | null>(null);
   const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  const bunnyCdnHostname = resolvePublicBunnyCdnHostname();
 
   const handleNewVersionUrlChange = (url: string) => {
     setNewVersionUrl(url);
@@ -61,6 +63,8 @@ export function useVersionActions({
     setIsCreatingVersion(true);
     setNewVersionUploadStatus('');
     setNewVersionUploadProgress(0);
+    let uploadedBunnyVideoId: string | null = null;
+    let uploadedBunnyUploadToken: string | null = null;
 
     try {
       let finalVideoUrl = '';
@@ -78,25 +82,64 @@ export function useVersionActions({
         finalThumbnailUrl = getThumbnailUrl(newVersionSource, 'large');
         finalDuration = meta?.duration || null;
       } else {
+        if (!bunnyUploadsEnabled) throw new Error('Direct uploads are disabled by this host');
         if (!newVersionFile) throw new Error('No file selected');
+        let title = newVersionFile.name;
+        if (newVersionLabel.trim()) {
+          title = newVersionLabel.trim();
+        } else {
+          title = title.replace(/\.[^/.]+$/, '');
+        }
 
-        const uploadResult = await uploadVideoMultipart({
-          projectId,
-          file: newVersionFile,
-
-          onProgress: ({ percentage }) => {
-            setNewVersionUploadProgress(percentage);
-          },
-
-          onStatus: (status) => {
-            setNewVersionUploadStatus(status);
-          },
+        setNewVersionUploadStatus('Initializing upload...');
+        const initRes = await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
         });
 
-        finalVideoUrl = uploadResult.url;
-        finalProviderId = uploadResult.providerId;
-        finalProviderVideoId = uploadResult.videoId;
-        finalThumbnailUrl = null;
+        if (!initRes.ok) throw new Error('Failed to initialize upload');
+        const {
+          data: { videoId: bunnyVideoId, libraryId, signature, expirationTime, uploadToken },
+        } = await initRes.json();
+        uploadedBunnyVideoId = bunnyVideoId;
+        uploadedBunnyUploadToken = uploadToken;
+
+        await new Promise((resolve, reject) => {
+          setNewVersionUploadStatus('Uploading video...');
+          const upload = new tus.Upload(newVersionFile, {
+            endpoint: 'https://video.bunnycdn.com/tusupload',
+            retryDelays: [0, 3000, 5000, 10000, 20000],
+            headers: {
+              AuthorizationSignature: signature,
+              AuthorizationExpire: expirationTime.toString(),
+              VideoId: bunnyVideoId,
+              LibraryId: libraryId,
+            },
+            metadata: {
+              filetype: newVersionFile.type,
+              title,
+            },
+            onError: (error) => reject(new Error(`Upload failed: ${error.message}`)),
+            onProgress: (bytesUploaded, bytesTotal) => {
+              const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(1);
+              setNewVersionUploadProgress(Number(percentage));
+              setNewVersionUploadStatus(`Uploading... ${percentage}%`);
+            },
+            onSuccess: () => {
+              setNewVersionUploadStatus('Processing video...');
+              resolve(true);
+            },
+          });
+          upload.start();
+        });
+
+        finalVideoUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${bunnyVideoId}`;
+        finalProviderId = 'bunny';
+        finalProviderVideoId = bunnyVideoId;
+        finalThumbnailUrl = bunnyCdnHostname
+          ? `https://${bunnyCdnHostname}/${bunnyVideoId}/thumbnail.jpg`
+          : null;
       }
 
       const res = await fetch(`/api/projects/${projectId}/videos/${videoId}/versions`, {
@@ -106,6 +149,7 @@ export function useVersionActions({
           videoUrl: finalVideoUrl,
           providerId: finalProviderId,
           providerVideoId: finalProviderVideoId,
+          uploadToken: uploadedBunnyUploadToken,
           versionLabel: newVersionLabel.trim() || null,
           thumbnailUrl: finalThumbnailUrl,
           duration: finalDuration,
@@ -138,6 +182,18 @@ export function useVersionActions({
       setNewVersionUploadStatus('');
     } catch (err) {
       const errorObj = err as Error;
+      if (uploadedBunnyVideoId && uploadedBunnyUploadToken) {
+        await fetch(`/api/projects/${projectId}/videos/bunny-init`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId: uploadedBunnyVideoId,
+            uploadToken: uploadedBunnyUploadToken,
+          }),
+        }).catch((cleanupError) => {
+          console.error('Failed to cleanup pending Bunny version upload:', cleanupError);
+        });
+      }
       console.error('Failed to create version:', errorObj);
       toast.error(errorObj.message || 'Failed to create version');
     } finally {

@@ -402,47 +402,10 @@ export default function NewVideoPageClient({
         }),
       });
 
-      const responsePayload = (await response.json().catch(() => null)) as {
-        data?: {
-          id?: string;
-        };
-        error?: string;
-      } | null;
-
-      if (!response.ok || !responsePayload?.data?.id) {
-        setSubmitError(responsePayload?.error || 'Failed to add video');
+      if (!response.ok) {
+        const data = await response.json();
+        setSubmitError(data.error || 'Failed to add video');
         return;
-      }
-
-      const createdVideoId = responsePayload.data.id;
-
-      if (uploadMode === 'file') {
-        setUploadStatus('Creating thumbnail...');
-
-        try {
-          const thumbnailResponse = await fetch(
-            `/api/projects/${projectId}/videos/${createdVideoId}/thumbnail`,
-            {
-              method: 'POST',
-            }
-          );
-
-          if (!thumbnailResponse.ok) {
-            const thumbnailPayload = await thumbnailResponse
-              .json()
-              .catch(() => null);
-
-            console.error(
-              'Video uploaded, but server thumbnail generation failed:',
-              thumbnailPayload?.error || thumbnailResponse.status
-            );
-          }
-        } catch (thumbnailError) {
-          console.error(
-            'Video uploaded, but server thumbnail generation failed:',
-            thumbnailError
-          );
-        }
       }
 
       router.push(`/projects/${projectId}`);

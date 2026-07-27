@@ -48,7 +48,7 @@ export async function GET(
       projectId: true,
       project: { select: projectSelect },
     } as const;
-    const [comment, videoAsset, session] = await Promise.all([
+    const [comment, videoAsset, thumbnailVersion, session] = await Promise.all([
       db.comment.findFirst({
         where: { imageUrl },
         select: {
@@ -61,10 +61,14 @@ export async function GET(
         where: { sourceUrl: imageUrl },
         select: { video: { select: videoSelect } },
       }),
+      db.videoVersion.findFirst({
+        where: { thumbnailUrl: imageUrl },
+        select: { video: { select: videoSelect } },
+      }),
       auth(),
     ]);
 
-    const video = comment?.version?.video ?? videoAsset?.video ?? null;
+    const video = comment?.version?.video ?? videoAsset?.video ?? thumbnailVersion?.video ?? null;
     if (!video) {
       return apiErrors.forbidden('Access denied');
     }
