@@ -7,6 +7,7 @@ import { notifyProjectOwner } from '@/lib/notifications';
 import { apiErrors, successResponse, withCacheControl } from '@/lib/api-response';
 import { verifyBunnyUploadToken } from '@/lib/bunny-upload-token';
 import { logError } from '@/lib/logger';
+import { processDirectPlayback } from '@/lib/video-processing/process-direct-playback';
 
 type RouteParams = { params: Promise<{ projectId: string }> };
 
@@ -168,6 +169,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         _count: { select: { versions: true } },
       },
     });
+
+    // Generate optimized playback copy for direct uploads.
+    // Do not block the create-video response while FFmpeg is running.
+    const initialVersion = video.versions[0];
+    if (initialVersion?.providerId === 'direct') {
+      void processDirectPlayback(initialVersion.id).catch((err) => {
+        logError(`Playback processing failed for version ${initialVersion.id}`, err);
+      });
+    }
 
     // Notify project owner (fire-and-forget, skip if they added it themselves)
     if (project.ownerId !== session.user.id) {
