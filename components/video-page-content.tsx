@@ -381,11 +381,16 @@ export function VideoPageContent({
   }, [scheduleWatchProgressSave]);
 
   const handleResumeFromSavedWithSync = useCallback(() => {
-    const resumed = handleResumeFromSaved();
-    if (typeof resumed === 'number') {
-      setCurrentTime(resumed);
-    }
-  }, [handleResumeFromSaved, setCurrentTime]);
+    if (savedProgress === null) return;
+
+    handleSeekToTimestamp(savedProgress);
+    handleDismissResume();
+  }, [savedProgress, handleSeekToTimestamp, handleDismissResume]);
+
+  const handleStartOver = useCallback(() => {
+    handleSeekToTimestamp(0);
+    handleDismissResume();
+  }, [handleSeekToTimestamp, handleDismissResume]);
 
   const { activeDownloadTarget, isDownloadingVideo, startDownload } = useDownloadActions({
     activeVersion,
@@ -786,7 +791,7 @@ export function VideoPageContent({
             savedProgress={savedProgress}
             formatTime={formatTime}
             handleResumeFromSaved={handleResumeFromSavedWithSync}
-            handleDismissResume={handleDismissResume}
+            handleDismissResume={handleStartOver}
             isAnnotating={isAnnotating}
             annotationCanvasRef={annotationCanvasRef}
             setAnnotationStrokes={setAnnotationStrokes}
