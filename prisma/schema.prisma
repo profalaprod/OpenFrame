@@ -347,6 +347,13 @@ model Video {
   @@map("videos")
 }
 
+enum VideoPlaybackStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
 model VideoVersion {
   id              String   @id @default(cuid())
   versionNumber   Int      // 1, 2, 3...
@@ -356,6 +363,9 @@ model VideoVersion {
   providerId      String   // 'youtube', 'vimeo', 'direct'
   videoId         String   // Provider-specific video ID
   originalUrl     String   // Original URL submitted by user
+  playbackUrl    String?
+  playbackStatus VideoPlaybackStatus @default(PENDING)
+  playbackError  String? @db.Text
   
   // Cached metadata
   title           String?
