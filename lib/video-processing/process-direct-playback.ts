@@ -1,8 +1,6 @@
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { spawn } from 'node:child_process';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
-import { pipeline } from 'node:stream/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -128,6 +126,11 @@ export async function processDirectPlayback(versionId: string): Promise<void> {
 
     const sourceKey = getObjectKey(version.originalUrl);
 
+    console.log('[PLAYBACK] Downloading', {
+      bucket: R2_BUCKET_NAME,
+      sourceKey,
+    });
+
     const source = await r2Client.send(
       new GetObjectCommand({
         Bucket: R2_BUCKET_NAME,
@@ -139,25 +142,42 @@ export async function processDirectPlayback(versionId: string): Promise<void> {
       throw new Error('Storage object has no body');
     }
 
-    await pipeline(
-      source.Body as NodeJS.ReadableStream,
-      createWriteStream(inputPath)
-    );
+    const sourceBytes = await source.Body.transformToByteArray();
+    const sourceBuffer = Buffer.from(sourceBytes);
 
+    console.log('[PLAYBACK] Downloaded', {
+      bytes: sourceBuffer.length,
+    });
+
+    await writeFile(inputPath, sourceBuffer);
+
+    console.log('[PLAYBACK] FFmpeg starting');
     await runFfmpeg(inputPath, outputPath);
+    console.log('[PLAYBACK] FFmpeg completed');
 
     const playbackKey =
       `playback/${version.videoParentId}/${version.id}.mp4`;
+
+    const playbackBuffer = await readFile(outputPath);
+
+    console.log('[PLAYBACK] Uploading', {
+      playbackKey,
+      bytes: playbackBuffer.length,
+    });
 
     await r2Client.send(
       new PutObjectCommand({
         Bucket: R2_BUCKET_NAME,
         Key: playbackKey,
-        Body: createReadStream(outputPath),
+        Body: playbackBuffer,
         ContentType: 'video/mp4',
         CacheControl: 'public, max-age=31536000, immutable',
       })
     );
+
+    console.log('[PLAYBACK] Uploaded', {
+      playbackKey,
+    });
 
     const playbackUrl = getR2PublicObjectUrl(playbackKey);
 
