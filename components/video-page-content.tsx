@@ -298,12 +298,19 @@ export function VideoPageContent({
       if (!bunnyCdnHostname) return '';
       return `https://${bunnyCdnHostname}/${activeVersion.videoId}/playlist.m3u8`;
     }
+    const playbackSource =
+      activeVersion.providerId === 'direct' &&
+      activeVersion.playbackStatus === 'READY' &&
+      activeVersion.playbackUrl
+        ? activeVersion.playbackUrl
+        : activeVersion.originalUrl;
+
     try {
-      const url = new URL(activeVersion.originalUrl);
+      const url = new URL(playbackSource);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         return '';
       }
-      return activeVersion.originalUrl;
+      return playbackSource;
     } catch {
       return '';
     }

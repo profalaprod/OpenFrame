@@ -5,6 +5,9 @@ export interface Version {
   providerId: string;
   videoId: string;
   originalUrl: string;
+  playbackUrl: string | null;
+  playbackStatus: 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+  playbackError: string | null;
   title: string | null;
   thumbnailUrl: string | null;
   duration: number | null;
