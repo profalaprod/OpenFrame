@@ -157,6 +157,74 @@ export function useVideoPageData({ mode, videoId, propProjectId }: UseVideoPageD
   }, [activeVersionId, fetchVersionComments]);
 
   useEffect(() => {
+    const activeVersion =
+      video?.versions?.find((version) => version.id === activeVersionId) ||
+      video?.versions?.find((version) => version.isActive) ||
+      video?.versions?.[0];
+
+    if (
+      !activeVersion ||
+      activeVersion.providerId !== 'direct' ||
+      (activeVersion.playbackStatus !== 'PENDING' &&
+        activeVersion.playbackStatus !== 'PROCESSING')
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollPlayback = async () => {
+      try {
+        const res = await fetch(apiBasePath, { cache: 'no-store' });
+
+        if (!res.ok || cancelled) return;
+
+        const response = await res.json();
+        const versions = response?.data?.versions;
+
+        if (!Array.isArray(versions) || cancelled) return;
+
+        const updatedVersion = versions.find(
+          (version: Version) => version.id === activeVersion.id
+        );
+
+        if (!updatedVersion) return;
+
+        setVideo((prev) => {
+          if (!prev) return prev;
+
+          return {
+            ...prev,
+            versions: prev.versions.map((version) =>
+              version.id === updatedVersion.id
+                ? {
+                    ...version,
+                    playbackUrl: updatedVersion.playbackUrl,
+                    playbackStatus: updatedVersion.playbackStatus,
+                    playbackError: updatedVersion.playbackError,
+                  }
+                : version
+            ),
+          };
+        });
+      } catch {
+        // Keep current source and retry on the next poll.
+      }
+    };
+
+    void pollPlayback();
+
+    const intervalId = window.setInterval(() => {
+      void pollPlayback();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [apiBasePath, activeVersionId, video?.versions]);
+
+  useEffect(() => {
     if (!projectId) return;
     async function fetchTags() {
       try {

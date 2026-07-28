@@ -65,6 +65,13 @@ export function useVideoPlayer({
   const [bunnySourcePreference, setBunnySourcePreference] = useState<'auto' | 'original'>('auto');
   const pendingHlsQualityRef = useRef<number | null>(null);
   const bunnySourceSwitchResumeRef = useRef<{ time: number; wasPlaying: boolean } | null>(null);
+  const directSourceSwitchResumeRef = useRef<{
+    time: number;
+    wasPlaying: boolean;
+    wasMuted: boolean;
+    playbackRate: number;
+  } | null>(null);
+  const previousDirectEmbedUrlRef = useRef<string | null>(null);
   const previousVersionKeyRef = useRef<string | null>(null);
   const [isBunnyPortraitSource, setIsBunnyPortraitSource] = useState(false);
   const [bunnyPortraitFrameWidth, setBunnyPortraitFrameWidth] = useState<number>(0);
@@ -152,6 +159,37 @@ export function useVideoPlayer({
     const versionChanged = previousVersionKeyRef.current !== currentVersionKey;
     previousVersionKeyRef.current = currentVersionKey;
 
+    if (isDirect) {
+      const previousDirectEmbedUrl = previousDirectEmbedUrlRef.current;
+      const videoEl = videoRef.current;
+
+      if (
+        !versionChanged &&
+        previousDirectEmbedUrl &&
+        previousDirectEmbedUrl !== embedUrl &&
+        videoEl
+      ) {
+        directSourceSwitchResumeRef.current = {
+          time: Number.isFinite(videoEl.currentTime)
+            ? Math.max(0, videoEl.currentTime)
+            : 0,
+          wasPlaying: !videoEl.paused && !videoEl.ended,
+          wasMuted: videoEl.muted,
+          playbackRate:
+            Number.isFinite(videoEl.playbackRate) && videoEl.playbackRate > 0
+              ? videoEl.playbackRate
+              : 1,
+        };
+      } else if (versionChanged) {
+        directSourceSwitchResumeRef.current = null;
+      }
+
+      previousDirectEmbedUrlRef.current = embedUrl;
+    } else {
+      previousDirectEmbedUrlRef.current = null;
+      directSourceSwitchResumeRef.current = null;
+    }
+
     setIsReady(false);
     setBunnyPlaybackState('none');
     setCurrentTime(0);
@@ -221,8 +259,44 @@ export function useVideoPlayer({
 
         const onLoadedMetadata = () => {
           setIsReady(true);
-          if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) {
-            setVideoDuration(videoEl.duration);
+
+          const duration =
+            Number.isFinite(videoEl.duration) && videoEl.duration > 0
+              ? videoEl.duration
+              : 0;
+
+          if (duration > 0) {
+            setVideoDuration(duration);
+          }
+
+          const resumeState = directSourceSwitchResumeRef.current;
+
+          if (resumeState) {
+            const targetTime =
+              duration > 0
+                ? Math.min(resumeState.time, Math.max(0, duration - 0.05))
+                : Math.max(0, resumeState.time);
+
+            videoEl.currentTime = targetTime;
+            videoEl.muted = resumeState.wasMuted;
+            videoEl.playbackRate = resumeState.playbackRate;
+
+            setCurrentTime(targetTime);
+            setIsMuted(resumeState.wasMuted);
+            setPlaybackSpeed(resumeState.playbackRate);
+
+            directSourceSwitchResumeRef.current = null;
+
+            if (resumeState.wasPlaying) {
+              videoEl
+                .play()
+                .catch((err) =>
+                  console.error(
+                    'Error resuming direct video after source switch:',
+                    err
+                  )
+                );
+            }
           }
         };
 
