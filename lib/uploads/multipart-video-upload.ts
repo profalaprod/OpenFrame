@@ -17,6 +17,7 @@ interface MultipartUploadOptions {
     progress: MultipartUploadProgress
   ) => void;
   onStatus?: (status: string) => void;
+  signal?: AbortSignal;
 }
 
 const PART_SIZE = 50 * 1024 * 1024;
@@ -28,10 +29,20 @@ async function readJson(response: Response) {
 function uploadPart(
   uploadUrl: string,
   blob: Blob,
-  onProgress: (loaded: number) => void
+  onProgress: (loaded: number) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+
+    const handleAbort = () => xhr.abort();
+
+    if (signal?.aborted) {
+      reject(new DOMException('Upload cancelled', 'AbortError'));
+      return;
+    }
+
+    signal?.addEventListener('abort', handleAbort, { once: true });
 
     xhr.open('PUT', uploadUrl);
 
@@ -42,6 +53,8 @@ function uploadPart(
     };
 
     xhr.onload = () => {
+      signal?.removeEventListener('abort', handleAbort);
+
       if (xhr.status < 200 || xhr.status >= 300) {
         reject(
           new Error(
@@ -66,6 +79,7 @@ function uploadPart(
     };
 
     xhr.onerror = () => {
+      signal?.removeEventListener('abort', handleAbort);
       reject(
         new Error(
           'Could not reach video storage'
@@ -74,9 +88,8 @@ function uploadPart(
     };
 
     xhr.onabort = () => {
-      reject(
-        new Error('Upload cancelled')
-      );
+      signal?.removeEventListener('abort', handleAbort);
+      reject(new DOMException('Upload cancelled', 'AbortError'));
     };
 
     xhr.send(blob);
@@ -88,7 +101,12 @@ export async function uploadVideoMultipart({
   file,
   onProgress,
   onStatus,
+  signal,
 }: MultipartUploadOptions): Promise<MultipartUploadResult> {
+  if (signal?.aborted) {
+    throw new DOMException('Upload cancelled', 'AbortError');
+  }
+
   onStatus?.('Initializing multipart upload...');
 
   const initResponse = await fetch(
@@ -98,6 +116,7 @@ export async function uploadVideoMultipart({
       headers: {
         'Content-Type': 'application/json',
       },
+      signal,
       body: JSON.stringify({
         filename: file.name,
         contentType:
@@ -161,6 +180,7 @@ export async function uploadVideoMultipart({
           'Content-Type':
             'application/json',
         },
+        signal,
         body: JSON.stringify({
           key,
           uploadId,
@@ -203,7 +223,8 @@ export async function uploadVideoMultipart({
           totalBytes: file.size,
           percentage,
         });
-      }
+      },
+      signal
     );
 
     completedParts.push({
@@ -236,6 +257,7 @@ export async function uploadVideoMultipart({
         'Content-Type':
           'application/json',
       },
+      signal,
       body: JSON.stringify({
         key,
         uploadId,

@@ -44,6 +44,7 @@ interface VersionActionsDialogProps {
   isCreatingVersion: boolean;
   versionsCount: number;
   onCreateVersion: () => void;
+  onCancelUpload: () => void;
 }
 
 export const VersionActionsDialog = memo(function VersionActionsDialog({
@@ -65,6 +66,7 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
   isCreatingVersion,
   versionsCount,
   onCreateVersion,
+  onCancelUpload,
 }: VersionActionsDialogProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -82,7 +84,13 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
   }, [newVersionFile]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isCreatingVersion) return;
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Plus className="h-4 w-4 mr-1" />
@@ -275,6 +283,15 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
             </div>
           )}
 
+          {isCreatingVersion && (
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={onCancelUpload}
+            >
+              Cancel Upload
+            </Button>
+          )}
           <Button
             onClick={onCreateVersion}
             disabled={

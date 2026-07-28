@@ -192,6 +192,7 @@ export function VideoPageContent({
     newVersionUploadStatus,
     handleNewVersionUrlChange,
     handleCreateVersion,
+    cancelVersionUpload,
     showDeleteVersionDialog,
     setShowDeleteVersionDialog,
     setVersionToDelete,
@@ -738,6 +739,7 @@ export function VideoPageContent({
             newVersionUploadProgress={newVersionUploadProgress}
             isCreatingVersion={isCreatingVersion}
             onCreateVersion={headerActions.onCreateVersion}
+            onCancelVersionUpload={cancelVersionUpload}
             onOpenCompare={headerActions.onOpenCompare}
             canRequestApproval={canRequestApproval}
             canShareVideo={canShareVideo}

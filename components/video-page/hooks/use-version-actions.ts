@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import {
   parseVideoUrl,
@@ -31,6 +31,7 @@ export function useVersionActions({
   const [newVersionSource, setNewVersionSource] = useState<VideoSource | null>(null);
   const [newVersionUrlError, setNewVersionUrlError] = useState('');
   const [isCreatingVersion, setIsCreatingVersion] = useState(false);
+  const versionUploadAbortRef = useRef<AbortController | null>(null);
   const [newVersionMode, setNewVersionMode] = useState<'url' | 'file'>('url');
   const [newVersionFile, setNewVersionFile] = useState<File | null>(null);
   const [newVersionUploadProgress, setNewVersionUploadProgress] = useState(0);
@@ -80,7 +81,11 @@ export function useVersionActions({
       } else {
         if (!newVersionFile) throw new Error('No file selected');
 
+        const abortController = new AbortController();
+        versionUploadAbortRef.current = abortController;
+
         const uploadResult = await uploadVideoMultipart({
+          signal: abortController.signal,
           projectId,
           file: newVersionFile,
 
@@ -119,7 +124,49 @@ export function useVersionActions({
       }
 
       const versionData = await res.json();
-      const newVersion = versionData.data;
+      let newVersion = versionData.data;
+
+      // Direct file uploads do not have a thumbnail yet.
+      // The version was created with setActive: true, so the existing
+      // thumbnail endpoint will generate a thumbnail for this revision.
+      if (newVersionMode === 'file' && finalProviderId === 'direct') {
+        setNewVersionUploadStatus('Creating thumbnail...');
+
+        try {
+          const thumbnailResponse = await fetch(
+            `/api/projects/${projectId}/videos/${videoId}/thumbnail`,
+            { method: 'POST' }
+          );
+
+          if (thumbnailResponse.ok) {
+            const thumbnailPayload = await thumbnailResponse.json();
+            const generatedThumbnailUrl =
+              thumbnailPayload?.data?.thumbnailUrl || null;
+
+            if (generatedThumbnailUrl) {
+              newVersion = {
+                ...newVersion,
+                thumbnailUrl: generatedThumbnailUrl,
+              };
+            }
+          } else {
+            const thumbnailPayload = await thumbnailResponse
+              .json()
+              .catch(() => null);
+
+            console.error(
+              'Version created, but thumbnail generation failed:',
+              thumbnailPayload?.error || thumbnailResponse.status
+            );
+          }
+        } catch (thumbnailError) {
+          console.error(
+            'Version created, but thumbnail generation failed:',
+            thumbnailError
+          );
+        }
+      }
+
       setVideo((prev) => {
         if (!prev) return prev;
         const updatedVersions = prev.versions.map((v) => ({ ...v, isActive: false }));
@@ -137,12 +184,48 @@ export function useVersionActions({
       setNewVersionFile(null);
       setNewVersionUploadStatus('');
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setNewVersionUploadStatus('Upload cancelled');
+        return;
+      }
+
       const errorObj = err as Error;
       console.error('Failed to create version:', errorObj);
       toast.error(errorObj.message || 'Failed to create version');
     } finally {
+      versionUploadAbortRef.current = null;
       setIsCreatingVersion(false);
     }
+  };
+
+  const cancelVersionUpload = () => {
+    versionUploadAbortRef.current?.abort();
+  };
+
+  const resetVersionDialog = () => {
+    if (versionUploadAbortRef.current) {
+      versionUploadAbortRef.current.abort();
+      versionUploadAbortRef.current = null;
+    }
+
+    setNewVersionUrl('');
+    setNewVersionLabel('');
+    setNewVersionSource(null);
+    setNewVersionUrlError('');
+    setNewVersionMode('url');
+    setNewVersionFile(null);
+    setNewVersionUploadProgress(0);
+    setNewVersionUploadStatus('');
+    setIsCreatingVersion(false);
+  };
+
+  const handleVersionDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      if (isCreatingVersion) return;
+      resetVersionDialog();
+    }
+
+    setShowVersionDialog(open);
   };
 
   const handleDeleteVersion = async () => {
@@ -188,7 +271,7 @@ export function useVersionActions({
 
   return {
     showVersionDialog,
-    setShowVersionDialog,
+    setShowVersionDialog: handleVersionDialogOpenChange,
     newVersionUrl,
     newVersionLabel,
     setNewVersionLabel,
@@ -203,6 +286,7 @@ export function useVersionActions({
     newVersionUploadStatus,
     handleNewVersionUrlChange,
     handleCreateVersion,
+    cancelVersionUpload,
 
     showDeleteVersionDialog,
     setShowDeleteVersionDialog,

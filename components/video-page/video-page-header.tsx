@@ -74,6 +74,7 @@ interface VideoPageHeaderProps {
   newVersionUploadProgress: number;
   isCreatingVersion: boolean;
   onCreateVersion: () => void;
+  onCancelVersionUpload: () => void;
   onOpenCompare: () => void;
   canRequestApproval: boolean;
   canShareVideo: boolean;
@@ -122,6 +123,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
   newVersionUploadProgress,
   isCreatingVersion,
   onCreateVersion,
+  onCancelVersionUpload,
   onOpenCompare,
   canRequestApproval,
   canShareVideo,
@@ -277,6 +279,7 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                   isCreatingVersion={isCreatingVersion}
                   versionsCount={versions.length}
                   onCreateVersion={onCreateVersion}
+                  onCancelUpload={onCancelVersionUpload}
                 />
               </div>
             ) : null}
