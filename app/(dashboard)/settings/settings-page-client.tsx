@@ -11,6 +11,7 @@ import {
   Globe,
   CreditCard,
   HardDrive,
+  LockKeyhole,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -152,6 +153,11 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
   // Form state for Telegram chat ID (separate from saved settings for editing)
   const [telegramChatId, setTelegramChatId] = useState('');
 
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
   const hasScheduledCancellation = Boolean(
     billing?.subscription.cancelAtPeriodEnd || billing?.subscription.cancelAt
   );
@@ -249,6 +255,56 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
     },
     [telegramChatId, showMessage]
   );
+
+  const handleChangePassword = useCallback(async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      showMessage('error', 'Please fill in all password fields');
+      return;
+    }
+
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      showMessage('error', 'New password must be between 8 and 128 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showMessage('error', 'New passwords do not match');
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      showMessage('error', 'New password must be different from current password');
+      return;
+    }
+
+    setChangingPassword(true);
+
+    try {
+      const res = await fetch('/api/settings/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        showMessage('success', data.data?.message || 'Password changed successfully');
+      } else {
+        showMessage('error', data.error || 'Failed to change password');
+      }
+    } catch {
+      showMessage('error', 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
+    }
+  }, [currentPassword, newPassword, confirmPassword, showMessage]);
 
   const handleBillingRedirect = useCallback(
     async (endpoint: '/api/billing/checkout' | '/api/billing/portal') => {
@@ -478,6 +534,94 @@ export default function SettingsPage({ billingOnly = false }: { billingOnly?: bo
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Security */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <LockKeyhole className="h-5 w-5" />
+            Security
+          </CardTitle>
+          <CardDescription>
+            Change the password used to sign in to your account
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="current-password">Current password</Label>
+            <Input
+              id="current-password"
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              disabled={changingPassword}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-password">New password</Label>
+            <Input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              disabled={changingPassword}
+              minLength={8}
+              maxLength={128}
+            />
+            <p className="text-xs text-muted-foreground">
+              Password must be between 8 and 128 characters.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password">Confirm new password</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={changingPassword}
+              minLength={8}
+              maxLength={128}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !changingPassword) {
+                  void handleChangePassword();
+                }
+              }}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => void handleChangePassword()}
+              disabled={
+                changingPassword ||
+                !currentPassword ||
+                !newPassword ||
+                !confirmPassword
+              }
+            >
+              {changingPassword ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Changing password...
+                </>
+              ) : (
+                <>
+                  <LockKeyhole className="h-4 w-4 mr-2" />
+                  Change password
+                </>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
