@@ -111,9 +111,36 @@ export function useVideoPageData({ mode, videoId, propProjectId }: UseVideoPageD
         };
 
         setVideo(normalizedData);
-        const active =
+
+        let initialVersion =
           normalizedData.versions?.find((v) => v.isActive) || normalizedData.versions?.[0];
-        if (active) setActiveVersionId(active.id);
+
+        // Dashboard users should return to the revision they viewed most recently.
+        if (mode === 'dashboard' && normalizedData.isAuthenticated) {
+          try {
+            const progressRes = await fetch(
+              `/api/watch/${videoId}/progress?lastViewed=true`,
+              { cache: 'no-store' }
+            );
+
+            if (progressRes.ok) {
+              const progressPayload = await progressRes.json();
+              const lastViewedVersionId = progressPayload?.data?.versionId;
+
+              const lastViewedVersion = normalizedData.versions?.find(
+                (version) => version.id === lastViewedVersionId
+              );
+
+              if (lastViewedVersion) {
+                initialVersion = lastViewedVersion;
+              }
+            }
+          } catch {
+            // Fall back to globally active revision.
+          }
+        }
+
+        if (initialVersion) setActiveVersionId(initialVersion.id);
       } catch (err) {
         console.error('Error fetching video:', err);
         setError('Failed to load video');

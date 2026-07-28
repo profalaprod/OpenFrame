@@ -17,6 +17,50 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { videoId } = await params;
+    const lastViewed = request.nextUrl.searchParams.get('lastViewed') === 'true';
+
+    // For last-viewed lookup, resolve the newest WatchProgress belonging
+    // to any revision of this video after validating project access.
+    if (lastViewed) {
+      const userId = session.user.id;
+
+      const video = await db.video.findUnique({
+        where: { id: videoId },
+        include: {
+          project: { include: projectAccessInclude(userId) },
+        },
+      });
+
+      if (!video) {
+        return apiErrors.notFound('Video');
+      }
+
+      const access = computeProjectAccess(video.project, userId);
+
+      if (!access.hasAccess) {
+        return apiErrors.forbidden('Access denied');
+      }
+
+      const progress = await db.watchProgress.findFirst({
+        where: {
+          userId,
+          version: {
+            videoParentId: videoId,
+          },
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+      });
+
+      return successResponse({
+        versionId: progress?.versionId || null,
+        progress: progress?.progress || 0,
+        duration: progress?.duration || 0,
+        percentage: progress?.percentage || 0,
+        updatedAt: progress?.updatedAt || null,
+      });
+    }
 
     // Get the video and its active version (project access data pre-fetched in same query)
     const userId = session.user.id;
@@ -83,20 +127,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { videoId } = await params;
     const body = await request.json();
+    const touchOnly = body.touchOnly === true;
     const { progress, duration, versionId } = body;
 
     const MAX_VIDEO_SECONDS = 86_400; // 24 hours — reasonable upper bound for any video
 
     if (
-      typeof progress !== 'number' ||
-      !isFinite(progress) ||
-      progress < 0 ||
-      progress > MAX_VIDEO_SECONDS
+      !touchOnly &&
+      (typeof progress !== 'number' ||
+        !isFinite(progress) ||
+        progress < 0 ||
+        progress > MAX_VIDEO_SECONDS)
     ) {
       return apiErrors.badRequest('Invalid progress value');
     }
 
     if (
+      !touchOnly &&
       duration !== undefined &&
       (typeof duration !== 'number' ||
         !isFinite(duration) ||
@@ -139,11 +186,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return apiErrors.notFound('Video version');
     }
 
-    // Calculate percentage
-    const safeDuration = duration || 0;
-    const percentage = safeDuration > 0 ? Math.min(100, (progress / safeDuration) * 100) : 0;
+    const safeProgress = touchOnly ? 0 : progress;
+    const safeDuration = touchOnly ? 0 : duration || 0;
+    const percentage =
+      safeDuration > 0 ? Math.min(100, (safeProgress / safeDuration) * 100) : 0;
 
-    // Client already filters tiny deltas (<2s) before sending — safe to upsert directly.
+    // touchOnly marks a revision as most recently viewed without destroying
+    // an existing resume position. If no progress row exists yet, create
+    // an empty one so the revision can still become the last viewed version.
     const watchProgress = await db.watchProgress.upsert({
       where: {
         userId_versionId: {
@@ -151,15 +201,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           versionId: targetVersion.id,
         },
       },
-      update: {
-        progress,
-        duration: safeDuration,
-        percentage,
-      },
+      update: touchOnly
+        ? {
+            updatedAt: new Date(),
+          }
+        : {
+            progress: safeProgress,
+            duration: safeDuration,
+            percentage,
+          },
       create: {
         userId: session.user.id,
         versionId: targetVersion.id,
-        progress,
+        progress: safeProgress,
         duration: safeDuration,
         percentage,
       },

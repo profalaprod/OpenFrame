@@ -109,10 +109,15 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       orderBy: [{ updatedAt: sortOrder }, { id: sortOrder }],
       include: {
         versions: {
-          where: { isActive: true },
-          take: 1,
+          orderBy: { versionNumber: 'desc' },
           include: {
             _count: { select: { comments: true } },
+            watchProgress: session?.user?.id
+              ? {
+                  where: { userId: session.user.id },
+                  select: { updatedAt: true },
+                }
+              : false,
           },
         },
         _count: { select: { versions: true } },
@@ -127,15 +132,29 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
 
   // Transform videos for VideoCard component
   const videos = paginatedVideos.map((video) => {
-    const activeVersion = video.versions[0];
+    const globallyActiveVersion =
+      video.versions.find((version) => version.isActive) || video.versions[0];
+
+    const lastViewedVersion = session?.user?.id
+      ? video.versions
+          .filter((version) => version.watchProgress.length > 0)
+          .sort(
+            (a, b) =>
+              b.watchProgress[0].updatedAt.getTime() -
+              a.watchProgress[0].updatedAt.getTime()
+          )[0]
+      : undefined;
+
+    const displayVersion = lastViewedVersion || globallyActiveVersion;
+
     return {
       id: video.id,
       title: video.title,
-      thumbnailUrl:
-        activeVersion?.thumbnailUrl || '',
-      currentVersion: video._count.versions,
-      commentCount: activeVersion?._count.comments || 0,
-      duration: formatDuration(activeVersion?.duration),
+      thumbnailUrl: displayVersion?.thumbnailUrl || '',
+      currentVersion:
+        displayVersion?.versionNumber || video._count.versions,
+      commentCount: displayVersion?._count.comments || 0,
+      duration: formatDuration(displayVersion?.duration),
       lastUpdated: formatRelativeTime(video.updatedAt),
       updatedAt: video.updatedAt.toISOString(),
     };

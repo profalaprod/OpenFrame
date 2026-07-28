@@ -212,8 +212,23 @@ export function VideoPageContent({
   const handleVersionSelect = useCallback(
     (versionId: string) => {
       setActiveVersionId(versionId);
+
+      // Touch WatchProgress immediately so this revision becomes
+      // the user's last viewed revision even if they leave before playback.
+      if (mode === 'dashboard' && video?.isAuthenticated) {
+        void fetch(`/api/watch/${videoId}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            versionId,
+            touchOnly: true,
+          }),
+        }).catch(() => {
+          // Playback/version selection must not fail because persistence failed.
+        });
+      }
     },
-    [setActiveVersionId]
+    [mode, video, videoId, setActiveVersionId]
   );
 
   // Memoize toggle show resolved handler
