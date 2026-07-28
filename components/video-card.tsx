@@ -60,6 +60,8 @@ interface VideoCardProps {
     title: string;
     thumbnailUrl: string;
     currentVersion: number;
+    latestVersion: number;
+    newRevisionVersion: number | null;
     commentCount: number;
     duration: string;
     lastUpdated: string;
@@ -259,6 +261,11 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
                     <Badge variant="secondary" className="text-xs">
                       v{video.currentVersion}
                     </Badge>
+                    {video.newRevisionVersion !== null && (
+                      <Badge variant="default" className="text-xs">
+                        New · v{video.newRevisionVersion}
+                      </Badge>
+                    )}
                     <span className="text-xs">{video.duration}</span>
                   </span>
                   <span className="flex items-center gap-1">
@@ -419,7 +426,7 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
               className="w-full"
             >
               {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Add Version {video.currentVersion + 1}
+              Add Version {video.latestVersion + 1}
             </Button>
           </div>
         </DialogContent>

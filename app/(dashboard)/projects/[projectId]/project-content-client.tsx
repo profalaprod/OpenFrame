@@ -27,6 +27,8 @@ interface SerializedVideo {
   title: string;
   thumbnailUrl: string;
   currentVersion: number;
+  latestVersion: number;
+  newRevisionVersion: number | null;
   commentCount: number;
   duration: string;
   lastUpdated: string;

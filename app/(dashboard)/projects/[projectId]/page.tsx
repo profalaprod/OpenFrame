@@ -147,12 +147,26 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
 
     const displayVersion = lastViewedVersion || globallyActiveVersion;
 
+    const latestVersionNumber =
+      video.versions.reduce(
+        (latest, version) => Math.max(latest, version.versionNumber),
+        0
+      ) || video._count.versions;
+
+    const newRevisionVersion =
+      lastViewedVersion &&
+      latestVersionNumber > lastViewedVersion.versionNumber
+        ? latestVersionNumber
+        : null;
+
     return {
       id: video.id,
       title: video.title,
       thumbnailUrl: displayVersion?.thumbnailUrl || '',
       currentVersion:
-        displayVersion?.versionNumber || video._count.versions,
+        displayVersion?.versionNumber || latestVersionNumber,
+      latestVersion: latestVersionNumber,
+      newRevisionVersion,
       commentCount: displayVersion?._count.comments || 0,
       duration: formatDuration(displayVersion?.duration),
       lastUpdated: formatRelativeTime(video.updatedAt),
