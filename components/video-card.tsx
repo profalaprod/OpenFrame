@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -53,6 +53,7 @@ import {
   type VideoSource,
 } from '@/lib/video-providers';
 import { resolvePublicBunnyCdnHostname } from '@/lib/bunny-cdn';
+import { uploadVideoMultipart } from '@/lib/uploads/multipart-video-upload';
 
 interface VideoCardProps {
   video: {
@@ -90,6 +91,11 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
   const [versionSource, setVersionSource] = useState<VideoSource | null>(null);
   const [versionUrlError, setVersionUrlError] = useState('');
   const [isCreatingVersion, setIsCreatingVersion] = useState(false);
+  const [versionMode, setVersionMode] = useState<'url' | 'file'>('file');
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [versionUploadProgress, setVersionUploadProgress] = useState(0);
+  const [versionUploadStatus, setVersionUploadStatus] = useState('');
+  const versionUploadAbortRef = useRef<AbortController | null>(null);
 
   // Delete dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -152,35 +158,113 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
   };
 
   const handleCreateVersion = async () => {
-    if (!versionSource) return;
     setIsCreatingVersion(true);
+    setVersionUploadProgress(0);
+    setVersionUploadStatus('');
+
     try {
-      const meta = await fetchVideoMetadata(versionSource);
-      const thumbnailUrl = getThumbnailUrl(versionSource, 'large');
+      let finalVideoUrl = '';
+      let finalProviderId = '';
+      let finalProviderVideoId = '';
+      let finalThumbnailUrl: string | null = null;
+      let finalDuration: number | null = null;
+
+      if (versionMode === 'url') {
+        if (!versionSource) throw new Error('Invalid URL');
+
+        const meta = await fetchVideoMetadata(versionSource);
+
+        finalVideoUrl = versionSource.originalUrl;
+        finalProviderId = versionSource.providerId;
+        finalProviderVideoId = versionSource.videoId;
+        finalThumbnailUrl = getThumbnailUrl(versionSource, 'large');
+        finalDuration = meta?.duration || null;
+      } else {
+        if (!versionFile) throw new Error('No file selected');
+
+        const abortController = new AbortController();
+        versionUploadAbortRef.current = abortController;
+
+        const uploadResult = await uploadVideoMultipart({
+          signal: abortController.signal,
+          projectId,
+          file: versionFile,
+          onProgress: ({ percentage }) => {
+            setVersionUploadProgress(percentage);
+          },
+          onStatus: (status) => {
+            setVersionUploadStatus(status);
+          },
+        });
+
+        finalVideoUrl = uploadResult.url;
+        finalProviderId = uploadResult.providerId;
+        finalProviderVideoId = uploadResult.videoId;
+      }
 
       const res = await fetch(`/api/projects/${projectId}/videos/${video.id}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: versionSource.originalUrl,
-          providerId: versionSource.providerId,
-          providerVideoId: versionSource.videoId,
+          videoUrl: finalVideoUrl,
+          providerId: finalProviderId,
+          providerVideoId: finalProviderVideoId,
           versionLabel: versionLabel.trim() || null,
-          thumbnailUrl,
-          duration: meta?.duration || null,
+          thumbnailUrl: finalThumbnailUrl,
+          duration: finalDuration,
           setActive: true,
         }),
       });
-      if (res.ok) {
-        setShowVersionDialog(false);
-        setVersionUrl('');
-        setVersionLabel('');
-        setVersionSource(null);
-        router.refresh();
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Failed to create version');
       }
+
+      if (versionMode === 'file' && finalProviderId === 'direct') {
+        setVersionUploadStatus('Creating thumbnail...');
+
+        try {
+          const thumbnailResponse = await fetch(
+            `/api/projects/${projectId}/videos/${video.id}/thumbnail`,
+            { method: 'POST' }
+          );
+
+          if (!thumbnailResponse.ok) {
+            const thumbnailPayload = await thumbnailResponse.json().catch(() => null);
+            console.error(
+              'Version created, but thumbnail generation failed:',
+              thumbnailPayload?.error || thumbnailResponse.status
+            );
+          }
+        } catch (thumbnailError) {
+          console.error(
+            'Version created, but thumbnail generation failed:',
+            thumbnailError
+          );
+        }
+      }
+
+      setShowVersionDialog(false);
+      setVersionUrl('');
+      setVersionLabel('');
+      setVersionSource(null);
+      setVersionFile(null);
+      setVersionUploadProgress(0);
+      setVersionUploadStatus('');
+      router.refresh();
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setVersionUploadStatus('Upload cancelled');
+        return;
+      }
+
       console.error('Failed to create version:', err);
+      setVersionUploadStatus(
+        err instanceof Error ? err.message : 'Failed to create version'
+      );
     } finally {
+      versionUploadAbortRef.current = null;
       setIsCreatingVersion(false);
     }
   };
@@ -375,42 +459,146 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
       </Dialog>
 
       {/* Add Version Dialog */}
-      <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
-        <DialogContent>
+      <Dialog
+        open={showVersionDialog}
+        onOpenChange={(open) => {
+          if (!open && isCreatingVersion) return;
+
+          setShowVersionDialog(open);
+
+          if (!open) {
+            versionUploadAbortRef.current?.abort();
+            versionUploadAbortRef.current = null;
+            setVersionUrl('');
+            setVersionLabel('');
+            setVersionSource(null);
+            setVersionUrlError('');
+            setVersionMode('file');
+            setVersionFile(null);
+            setVersionUploadProgress(0);
+            setVersionUploadStatus('');
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add New Version</DialogTitle>
             <DialogDescription>
               Upload a new version of &quot;{video.title}&quot;. The new version will become active.
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label>Video URL</Label>
-              <div className="relative">
-                <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={versionUrl}
-                  onChange={(e) => handleVersionUrlChange(e.target.value)}
-                  className="pl-10"
-                  disabled={isCreatingVersion}
-                />
-              </div>
-              {versionUrlError && (
-                <p className="text-sm text-destructive flex items-center gap-1">
-                  <AlertCircle className="h-4 w-4" />
-                  {versionUrlError}
-                </p>
-              )}
-              {versionSource && (
-                <p className="text-sm text-green-600 flex items-center gap-1">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {versionSource.providerId.charAt(0).toUpperCase() +
-                    versionSource.providerId.slice(1)}{' '}
-                  video detected
-                </p>
-              )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={versionMode === 'file' ? 'default' : 'outline'}
+                onClick={() => setVersionMode('file')}
+                disabled={isCreatingVersion}
+              >
+                Direct Upload
+              </Button>
+
+              <Button
+                type="button"
+                variant={versionMode === 'url' ? 'default' : 'outline'}
+                onClick={() => setVersionMode('url')}
+                disabled={isCreatingVersion}
+              >
+                Video URL
+              </Button>
             </div>
+
+            {versionMode === 'file' ? (
+              <div className="space-y-2">
+                <Label>Video File</Label>
+
+                <label
+                  className={`flex min-h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
+                    versionFile
+                      ? 'border-primary bg-primary/5'
+                      : 'border-muted-foreground/25 hover:border-primary/50'
+                  } ${isCreatingVersion ? 'pointer-events-none opacity-60' : ''}`}
+                >
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    disabled={isCreatingVersion}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setVersionFile(file);
+                      setVersionUploadProgress(0);
+                      setVersionUploadStatus('');
+                    }}
+                  />
+
+                  {versionFile ? (
+                    <>
+                      <CheckCircle2 className="mb-2 h-6 w-6 text-green-600" />
+                      <span className="max-w-full truncate text-sm font-medium">
+                        {versionFile.name}
+                      </span>
+                      <span className="mt-1 text-xs text-muted-foreground">
+                        {(versionFile.size / 1024 / 1024).toFixed(1)} MB
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm font-medium">Choose video file</span>
+                      <span className="mt-1 text-xs text-muted-foreground">
+                        Tap to select a video from your device
+                      </span>
+                    </>
+                  )}
+                </label>
+
+                {(isCreatingVersion || versionUploadProgress > 0) && (
+                  <div className="space-y-1">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-primary transition-all"
+                        style={{ width: `${versionUploadProgress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {versionUploadStatus || `Uploading ${versionUploadProgress}%`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Video URL</Label>
+                <div className="relative">
+                  <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="https://youtube.com/watch?v=..."
+                    value={versionUrl}
+                    onChange={(e) => handleVersionUrlChange(e.target.value)}
+                    className="pl-10"
+                    disabled={isCreatingVersion}
+                  />
+                </div>
+
+                {versionUrlError && (
+                  <p className="flex items-center gap-1 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    {versionUrlError}
+                  </p>
+                )}
+
+                {versionSource && (
+                  <p className="flex items-center gap-1 text-sm text-green-600">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {versionSource.providerId.charAt(0).toUpperCase() +
+                      versionSource.providerId.slice(1)}{' '}
+                    video detected
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Version Label (optional)</Label>
               <Input
@@ -420,13 +608,27 @@ export function VideoCard({ video, projectId, canManage, onDeleted }: VideoCardP
                 disabled={isCreatingVersion}
               />
             </div>
+
+            {versionUploadStatus && !isCreatingVersion && (
+              <p className="text-sm text-muted-foreground">
+                {versionUploadStatus}
+              </p>
+            )}
+
             <Button
               onClick={handleCreateVersion}
-              disabled={!versionSource || isCreatingVersion}
+              disabled={
+                isCreatingVersion ||
+                (versionMode === 'file' ? !versionFile : !versionSource)
+              }
               className="w-full"
             >
-              {isCreatingVersion && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Add Version {video.latestVersion + 1}
+              {isCreatingVersion && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isCreatingVersion
+                ? versionUploadStatus || 'Adding Version...'
+                : `Add Version ${video.latestVersion + 1}`}
             </Button>
           </div>
         </DialogContent>

@@ -293,6 +293,19 @@ export const VideoPageHeader = memo(function VideoPageHeader({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {canManageVideo ? (
+                      <>
+                        <DropdownMenuItem
+                          className="sm:hidden"
+                          onSelect={() => setShowVersionDialog(true)}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          New Version
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="sm:hidden" />
+                      </>
+                    ) : null}
+
                     {canShareVideo ? (
                       <DropdownMenuItem asChild>
                         <Link href={`/projects/${projectId}/videos/${videoId}/share`}>

@@ -97,7 +97,7 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
           New Version
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add New Version</DialogTitle>
           <DialogDescription>
@@ -180,7 +180,7 @@ export const VersionActionsDialog = memo(function VersionActionsDialog({
                       toast.error('Please drop a valid video file');
                     }
                   }}
-                  className={`relative flex flex-col items-center justify-center w-full h-44 overflow-hidden border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                  className={`relative flex flex-col items-center justify-center w-full h-36 sm:h-44 overflow-hidden border-2 border-dashed rounded-lg cursor-pointer transition-all ${
                     isDragging
                       ? 'border-primary bg-primary/15 ring-2 ring-primary/30 scale-[1.01]'
                       : newVersionFile
