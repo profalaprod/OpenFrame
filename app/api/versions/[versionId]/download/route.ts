@@ -7,6 +7,9 @@ import { getShareSessionFromRequest } from '@/lib/share-session';
 import { resolveServerBunnyCdnHostname } from '@/lib/bunny-cdn';
 import { NextRequest } from 'next/server';
 import { DownloadEgressSource } from '@prisma/client';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createPublicR2Client, R2_BUCKET_NAME } from '@/lib/r2';
 import { logError } from '@/lib/logger';
 
 type RouteParams = { params: Promise<{ versionId: string }> };
@@ -309,8 +312,48 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return apiErrors.forbidden('Access denied');
     }
 
+    if (version.providerId === 'direct') {
+      const objectKey = version.videoId.replace(/^\/+/, '');
+
+      if (!objectKey || !objectKey.startsWith('videos/')) {
+        return apiErrors.badRequest('Invalid direct video object key');
+      }
+
+      const rawTitle = version.video.title?.trim() || 'video';
+      const safeTitle = rawTitle
+        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const versionLabel =
+        version.versionLabel?.trim() || `v${version.versionNumber}`;
+
+      const extension =
+        objectKey.match(/\.([a-zA-Z0-9]{2,5})$/)?.[1]?.toLowerCase() || 'mp4';
+
+      const downloadName = `${safeTitle || 'video'} ${versionLabel}.${extension}`;
+
+      const client = createPublicR2Client();
+
+      try {
+        const downloadUrl = await getSignedUrl(
+          client,
+          new GetObjectCommand({
+            Bucket: R2_BUCKET_NAME,
+            Key: objectKey,
+            ResponseContentDisposition: `attachment; filename="${downloadName.replace(/["\\]/g, '-')}"`,
+          }),
+          { expiresIn: 300 }
+        );
+
+        return Response.redirect(downloadUrl, 302);
+      } finally {
+        client.destroy();
+      }
+    }
+
     if (version.providerId !== 'bunny') {
-      return apiErrors.badRequest('Download is currently supported for Bunny versions only');
+      return apiErrors.badRequest('Download is not supported for this video provider');
     }
 
     if (sourceParam !== null && sourceParam !== 'original' && sourceParam !== 'compressed') {
