@@ -1,4 +1,4 @@
-const FALLBACK_SITE_URL = 'https://openframe.net';
+const FALLBACK_SITE_URL = 'https://frame.ndongala.tech';
 
 function normalizeSiteUrl(rawUrl: string | undefined): string {
   if (!rawUrl) {
@@ -25,21 +25,21 @@ export function getSiteUrl(): string {
 }
 
 export const seoConfig = {
-  name: 'OpenFrame',
-  title: 'Open Source Video Review Platform',
+  name: 'FRAME',
+  title: 'Private Video Review Platform',
   description:
-    'OpenFrame is an open source video review platform for collecting timestamped feedback with text and voice comments.',
+    'FRAME is a private video review platform for collaborative feedback, review and approval.',
   keywords: [
-    'open source video review platform',
-    'video review tool',
-    'timestamped video feedback',
+    'FRAME',
+    'video review platform',
+    'private video review',
+    'video feedback',
     'video collaboration',
-    'video annotation',
+    'video approval',
     'creative review workflow',
   ],
   url: getSiteUrl(),
   ogImage: '/meta.webp',
   logoPath: '/icon.svg',
   logo: '/icon.svg?v=2',
-  githubUrl: 'https://github.com/yusufipk/OpenFrame',
 } as const;

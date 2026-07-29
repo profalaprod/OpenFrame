@@ -1,7 +1,7 @@
 'use client';
+import Link from 'next/link';
 
 import { useState, useEffect, Suspense } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -102,10 +102,10 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
   const anyLoading = isLoading || oauthLoading !== null;
 
   return (
-    <Card>
-      <CardHeader className="text-center">
-        <CardTitle>Welcome back</CardTitle>
-        <CardDescription>Sign in to your account to continue</CardDescription>
+    <Card className="border-white/[0.08] bg-white/[0.045] text-white shadow-[0_30px_100px_rgba(0,0,0,0.55),0_0_80px_rgba(109,40,217,0.08)] backdrop-blur-2xl">
+      <CardHeader className="pb-5 text-center">
+        <CardTitle className="text-xl font-medium tracking-tight text-white">Welcome back</CardTitle>
+        <CardDescription className="text-white/40">Sign in to continue to FRAME</CardDescription>
       </CardHeader>
       <CardContent>
         {showSuccess && (
@@ -134,7 +134,7 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full"
+                className="w-full border-white/10 bg-white/[0.035] text-white hover:bg-white/[0.07] hover:text-white"
                 disabled={anyLoading}
                 onClick={() => handleOAuthLogin('google')}
               >
@@ -167,7 +167,7 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full"
+                className="w-full border-white/10 bg-white/[0.035] text-white hover:bg-white/[0.07] hover:text-white"
                 disabled={anyLoading}
                 onClick={() => handleOAuthLogin('github')}
               >
@@ -193,10 +193,10 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
         {hasOAuth && (
           <div className="relative mb-4">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
+              <span className="w-full border-t border-white/[0.08]" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or continue with email</span>
+              <span className="bg-[#0d0a15] px-3 text-[10px] tracking-[0.12em] text-white/30">OR CONTINUE WITH EMAIL</span>
             </div>
           </div>
         )}
@@ -204,11 +204,12 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
         {/* Email Form */}
         <form onSubmit={handleEmailLogin} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email" className="text-white/70">Email</Label>
             <Input
               id="email"
               type="email"
               placeholder="you@example.com"
+              className="border-white/[0.08] bg-black/20 text-white placeholder:text-white/20 focus-visible:border-violet-500/50 focus-visible:ring-violet-500/20"
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -219,11 +220,12 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password" className="text-white/70">Password</Label>
             <Input
               id="password"
               type="password"
               placeholder="••••••••"
+              className="border-white/[0.08] bg-black/20 text-white placeholder:text-white/20 focus-visible:border-violet-500/50 focus-visible:ring-violet-500/20"
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
@@ -234,18 +236,28 @@ function LoginFormInner({ googleEnabled, githubEnabled }: LoginFormInnerProps) {
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={anyLoading}>
+          <Button
+            type="submit"
+            className="w-full bg-gradient-to-r from-violet-700 via-violet-600 to-purple-600 text-white shadow-[0_8px_30px_rgba(124,58,237,0.22)] transition hover:from-violet-600 hover:via-violet-500 hover:to-purple-500"
+            disabled={anyLoading}
+          >
             {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Sign in
           </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-violet-500/40 bg-violet-500/[0.035] text-violet-300 hover:border-violet-400/70 hover:bg-violet-500/10 hover:text-violet-200"
+            asChild
+          >
+            <Link href="/register">
+              Create an account
+              <span className="ml-2">→</span>
+            </Link>
+          </Button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="text-primary hover:underline">
-            Sign up
-          </Link>
-        </p>
       </CardContent>
     </Card>
   );

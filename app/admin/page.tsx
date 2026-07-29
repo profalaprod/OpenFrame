@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Admin Dashboard | OpenFrame',
+  title: 'Admin Dashboard | FRAME',
   description: 'Admin overview dashboard',
 };
 

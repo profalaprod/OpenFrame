@@ -29,8 +29,8 @@ export const metadata: Metadata = {
   applicationName: seoConfig.name,
   keywords: [...seoConfig.keywords],
   authors: [{ name: seoConfig.name, url: seoConfig.url }],
-  creator: seoConfig.name,
-  publisher: seoConfig.name,
+  creator: 'NDONGALA',
+  publisher: 'NDONGALA',
   category: 'technology',
   referrer: 'no-referrer',
   alternates: {
@@ -86,10 +86,9 @@ const structuredData = [
   {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: seoConfig.name,
+    name: 'NDONGALA',
     url: seoConfig.url,
     logo: `${seoConfig.url}${seoConfig.logoPath}`,
-    sameAs: [seoConfig.githubUrl],
   },
   {
     '@context': 'https://schema.org',
@@ -99,7 +98,7 @@ const structuredData = [
     description: seoConfig.description,
     publisher: {
       '@type': 'Organization',
-      name: seoConfig.name,
+      name: 'NDONGALA',
       logo: {
         '@type': 'ImageObject',
         url: `${seoConfig.url}${seoConfig.logoPath}`,
